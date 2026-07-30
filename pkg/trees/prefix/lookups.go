@@ -1,8 +1,7 @@
-package trees
+package prefix
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"errors"
 
 	"github.com/felixlinker/keytrans-verification/pkg/crypto"
@@ -56,15 +55,13 @@ func MkLookups(label []byte, version uint64, pk []byte, fullLadder []*proofs.Bin
 			if searchKey, ok := crypto.VRF_verify(pk, label, ladderVersion, leafData.Proof /*@, p @*/); !ok {
 				err = errors.New("VRF verification failed")
 			} else {
-				k := make([]byte, len(searchKey))
-				copy(k, searchKey /*@, perm(1/2) @*/)
-				misc.MapSet(ladderVersion, k, vrfOutputs)
+				misc.MapSet(ladderVersion, utils.Copy(searchKey /*@, perm(1/2) @*/), vrfOutputs)
 
 				if ladderVersion <= version {
 					if leafData.Commitment == nil {
 						err = errors.New("missing commitment")
 					} else {
-						c := utils.FromDigest(*leafData.Commitment)
+						c := utils.Copy(leafData.Commitment /*@, p @*/)
 						misc.MapSet(ladderVersion, c, commitments)
 					}
 				}
@@ -92,8 +89,8 @@ func MkLookups(label []byte, version uint64, pk []byte, fullLadder []*proofs.Bin
 // @ preserves acc(ls.Inv(), p)
 // @ requires acc(t.Inv(), p)
 // @ ensures noPerm < tp && tp <= p && acc(t.Inv(), tp)
-// @ ensures r != nil && err != nil ==> acc(r, tp)
-func (ls *Lookups) CheckPrefixTree(t *Prefix /*@, ghost p perm @*/) (r *[sha256.Size]byte, err error /*@, ghost tp perm @*/) {
+// @ ensures r != nil && err != nil ==> acc(utils.BytesMem(r), tp)
+func (ls *Lookups) CheckPrefixTree(t *Tree /*@, ghost p perm @*/) (r []byte, err error /*@, ghost tp perm @*/) {
 	// @ unfold acc(ls.Inv(), p)
 	// @ assume 0 <= ls.version
 	steps /*@, idx @*/ := proofs.FullBinaryLadderSteps(ls.version /*@, ls.version @*/)
@@ -104,7 +101,7 @@ func (ls *Lookups) CheckPrefixTree(t *Prefix /*@, ghost p perm @*/) (r *[sha256.
 	// @ ghost tp = p
 	// @ invariant 0 <= i && i <= len(steps)
 	// @ invariant acc(steps) && acc(ls.Inv(), p) && noPerm < tp && tp <= p && acc(t.Inv(), tp)
-	// @ invariant r != nil ==> acc(r, tp)
+	// @ invariant r != nil ==> acc(utils.BytesMem(r), tp)
 	for i := 0; i < len(steps) && err == nil && !done; i++ {
 		lookup := steps[i]
 		// @ unfold acc(ls.Inv(), p)
@@ -123,10 +120,17 @@ func (ls *Lookups) CheckPrefixTree(t *Prefix /*@, ghost p perm @*/) (r *[sha256.
 						// a greatest version lookup.
 					} else if cExpected, ok := misc.MapGet(ls.commitments, lookup /*@, p @*/); !ok {
 						err = errors.New("commitments incomplete")
-					} else if !bytes.Equal(cExpected, utils.FromDigest(*c) /*@, p, p @*/) {
-						err = errors.New("failed expected prefix tree lookup")
-					} else if lookup == ls.version {
-						r = c
+					} else {
+						// @ unfold acc(utils.BytesMem(cExpected), p)
+						// @ unfold acc(utils.BytesMem(c), tp/2)
+						equal := bytes.Equal(cExpected, c /*@, p, tp/2 @*/)
+						// @ fold acc(utils.BytesMem(c), tp/2)
+						// @ fold acc(utils.BytesMem(cExpected), p)
+						if !equal {
+							err = errors.New("failed expected prefix tree lookup")
+						} else if lookup == ls.version {
+							r = c
+						}
 					}
 				} else if c != nil {
 					err = errors.New("inclusion but expected non-inclusion")

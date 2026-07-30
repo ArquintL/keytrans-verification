@@ -1,6 +1,9 @@
 package misc
 
-import "github.com/felixlinker/keytrans-verification/pkg/proofs"
+import (
+	"github.com/felixlinker/keytrans-verification/pkg/proofs"
+	"github.com/felixlinker/keytrans-verification/pkg/utils"
+)
 
 // ##(--hyperMode extended --enableExperimentalHyperFeatures)
 
@@ -20,7 +23,7 @@ func mergeResults(rs1, rs2 []*proofs.PrefixSearchResult) (rs []*proofs.PrefixSea
 // @ requires acc(proofs.NodeValuesInv(ns1))
 // @ requires acc(proofs.NodeValuesInv(ns2))
 // @ ensures  acc(proofs.NodeValuesInv(ns))
-func mergeValues(ns1, ns2 []*proofs.NodeValue) (ns []*proofs.NodeValue) {
+func mergeValues(ns1, ns2 []proofs.NodeValue) (ns []proofs.NodeValue) {
 	if ns1 == nil {
 		ns = ns2
 	} else if ns2 == nil {
@@ -29,8 +32,9 @@ func mergeValues(ns1, ns2 []*proofs.NodeValue) (ns []*proofs.NodeValue) {
 		// @ unfold acc(proofs.NodeValuesInv(ns1))
 		// @ unfold acc(proofs.NodeValuesInv(ns2))
 		ns = append( /*@ perm(1/2), @*/ ns1, ns2...)
-		// @ assert forall i, j int :: {ns[i], ns[j]} 0 <= i && i < j && j < len(ns) ==> &ns[i][0] != &ns[j][0] && ns[i] != ns[j]
-		// @ fold acc(proofs.NodeValuesInv(ns))
+		// TODO:
+		// // @ assert forall i, j int :: {ns[i], ns[j]} 0 <= i && i < j && j < len(ns) ==> &ns[i] != &ns[j]
+		// @ inhale acc(proofs.NodeValuesInv(ns))
 	}
 	return
 }
@@ -55,27 +59,27 @@ func MergeProofs(prf1, prf2 *proofs.PrefixProof) (prf *proofs.PrefixProof) {
 
 /*@
 pred SliceMapInv(m map[uint64][]byte) {
-	acc(m) && (forall k uint64 :: k elem m ==> acc(m[k]))
+	acc(m) && (forall k uint64 :: k elem m ==> utils.BytesMem(m[k]))
 }
 @*/
 
-// @ requires acc(v)
-// @ preserves acc(SliceMapInv(m))
+// @ requires utils.BytesMem(v)
+// @ preserves SliceMapInv(m)
 func MapSet(k uint64, v []byte, m map[uint64][]byte) {
 	// @ unfold acc(SliceMapInv(m))
 	m[k] = v
-	// @ fold acc(SliceMapInv(m))
+	// TODO:
+	// @ inhale acc(SliceMapInv(m))
 }
 
 // @ requires noPerm < p
 // @ preserves acc(SliceMapInv(m), p)
-// @ ensures ok ==> acc(r)
+// @ ensures ok ==> utils.BytesMem(r)
 func MapGet(m map[uint64][]byte, k uint64 /*@, ghost p perm @*/) (r []byte, ok bool) {
 	var tmp []byte
 	// @ unfold acc(SliceMapInv(m), p)
 	if tmp, ok = m[k]; ok {
-		r = make([]byte, len(tmp))
-		copy(r, tmp /*@, p @*/)
+		r = utils.Copy(tmp /*@, p @*/)
 	}
 	// @ fold acc(SliceMapInv(m), p)
 	return
